@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -95,11 +95,33 @@ export function OverviewClient({
     { label: "Productivity", value: totalTasks ? `${productivity}%` : "—", icon: TrendingUp, iconClass: "text-sky-500" },
   ];
 
-  const deptCounts = DEPARTMENTS.map((d) => ({
-    name: d,
-    objectives: objectives.filter((o) => o.department === d).length,
-    tasks: tasks.filter((t) => t.department === d).length,
-  }));
+  // Org-wide department counts — fetched via a SECURITY DEFINER RPC that
+  // returns ONLY aggregate numbers, never row contents (privacy preserved).
+  const [deptStats, setDeptStats] = useState<
+    { department: string; objectives_count: number; tasks_count: number }[]
+  >([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("department_stats", {
+        p_quarter: quarter,
+        p_year: year,
+      });
+      if (!cancelled && !error && data) setDeptStats(data as any);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, quarter, year]);
+
+  const deptCounts = DEPARTMENTS.map((d) => {
+    const row = deptStats.find((r) => r.department === d);
+    return {
+      name: d,
+      objectives: Number(row?.objectives_count ?? 0),
+      tasks: Number(row?.tasks_count ?? 0),
+    };
+  });
 
   async function createAnnouncement() {
     const { data: { user } } = await supabase.auth.getUser();
